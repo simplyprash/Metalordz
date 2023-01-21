@@ -2,7 +2,7 @@ require("@nomicfoundation/hardhat-toolbox");
 require("@nomiclabs/hardhat-etherscan");
 /** @type import('hardhat/config').HardhatUserConfig */
 
-const AURORA_PRIVATE_KEY = "3ed376fe27223f063fd74515ae37bb7d0f87a58e5762194316d7a325d9acc87a";
+const AURORA_PRIVATE_KEY = "<WALLET_PRIVATE_KEY>";
 
 module.exports = {
 	  solidity: "0.8.17",
@@ -34,8 +34,8 @@ module.exports = {
 		    },
 	  etherscan: {
 		      // Your API key for Etherscan
-		  //     // Obtain one at https://etherscan.io/
-		          apiKey: "K8IEHI3UW38W7A93A7GQS2JJMCDIIWJUAF" //AuroraKey
-		                  //  apiKey: "V6FQPUW8Y52DVEMCUTH7ZRQPWT8JD4HEMJ"
-		                    }
-		                    };
+		      // Obtain one at https://etherscan.io/
+		          apiKey: "<etherscan_key>" //AuroraKey
+		                 
+		       }
+		     };
