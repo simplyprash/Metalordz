@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: MIT
 
 pragma solidity ^0.8.17;
@@ -8,7 +7,6 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Burnable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
-import "@openzeppelin/contracts/utils/Strings.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/token/common/ERC2981.sol";
 import "./IERC4907.sol";
@@ -16,7 +14,6 @@ import "./IERC4907.sol";
 contract MetalordzEquipment is ERC721, ERC721Burnable, IERC4907, ERC2981, AccessControl, Ownable {
     using Counters for Counters.Counter;
     using SafeMath for uint256;
-    using Strings for uint256;
     string public baseURI;
     Counters.Counter private _tokenIdCounter;
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
@@ -24,7 +21,7 @@ contract MetalordzEquipment is ERC721, ERC721Burnable, IERC4907, ERC2981, Access
   
     // equipmentTypes
     mapping(uint256 => bool) public isEquipment;
-    // token Id to Equipment Type Id mapping
+    // token Id to equipment Type Id mapping
     mapping(uint256 => uint256) public equipmentType;   
 
     // UserInfo needed for implementation of IERC4907
@@ -34,8 +31,12 @@ contract MetalordzEquipment is ERC721, ERC721Burnable, IERC4907, ERC2981, Access
     }
 
     mapping(uint256 => UserInfo) internal _users;
+    event equipmentTypeAdded(uint256 equipmentTypeId);
+    event equipmentMinted(string trackingId, address mintedTo, uint256 tokenId, uint256 equipmentType);
 
-    constructor() ERC721("MetaLordz Equipment", "METALORDZ Equipment") {}
+    constructor() ERC721("MetaLordz Equipment", "METALORDZ EQUIPMENT") {
+        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
+    }
 
     function supportsInterface(bytes4 interfaceId) public view virtual override(ERC721, ERC2981, AccessControl) returns (bool) {
         return super.supportsInterface(interfaceId);
@@ -59,45 +60,49 @@ contract MetalordzEquipment is ERC721, ERC721Burnable, IERC4907, ERC2981, Access
 
     function setEquipmentTypes(uint256[] memory _equipmentTypes) external onlyRole(ADMIN_ROLE) {
         for (uint i=0; i<_equipmentTypes.length; i++) {
-            isEquipment[i] = true;
+            isEquipment[_equipmentTypes[i]] = true;
+            emit equipmentTypeAdded(_equipmentTypes[i]);
         }
     }
 
     // to be set with a '/' in the end
-    function setBaseURI(string calldata _baseURI) external onlyOwner {
+    function setBaseURI(string memory _baseURI) external onlyOwner {
         baseURI = _baseURI;
     }
 
-    function mintBulkEquipment(uint256 _equipmentTypeId, uint numOfTokens) external onlyRole(ADMIN_ROLE) {
-        require(isEquipment[_equipmentTypeId] == true, "Not a valid Equipment type");
+    function mintBulkEquipment(string memory _trackingId, address _to, uint256 _equipmentTypeId, uint numOfTokens) external onlyRole(ADMIN_ROLE) {
+        require(isEquipment[_equipmentTypeId] == true, "Not a valid equipment type");
         for (uint i=0; i< numOfTokens; i++) {
             uint256 tokenId = _tokenIdCounter.current();
-            _safeMint(msg.sender, tokenId);
+            _safeMint(_to, tokenId);
             equipmentType[tokenId] = _equipmentTypeId;
+            emit equipmentMinted(_trackingId,  _to, tokenId, _equipmentTypeId);
             _tokenIdCounter.increment();
         }
     }
 
-    function mintBulkEquipmentDistributed(uint256[] memory equipmentTypeArray, uint numOfTokens) external onlyRole(ADMIN_ROLE) {
+    function mintBulkEquipmentDistributed(string memory _trackingId, address _to, uint256[] memory equipmentTypeArray, uint numOfTokens) external onlyRole(ADMIN_ROLE) {
         uint len = equipmentTypeArray.length;
         for (uint i=0; i< numOfTokens; i++) {
             uint256 tokenId = _tokenIdCounter.current();
-            _safeMint(msg.sender, tokenId);
-            uint256 _equipmentTypeId = equipmentTypeArray[i.mod(len)]; //equal distribution of members of Equipment type Array
+            _safeMint(_to, tokenId);
+            uint256 _equipmentTypeId = equipmentTypeArray[i.mod(len)]; //equal distribution of members of equipment type Array
             equipmentType[tokenId] = _equipmentTypeId;
+            emit equipmentMinted(_trackingId, _to, tokenId, _equipmentTypeId);
             _tokenIdCounter.increment();
         }
     }
 
     // MINTER FUNCTIONS // -------------------------------------------- //
     
-    function safeMint(address _to, uint256 _equipmentTypeId, uint numOfTokens) public onlyRole(MINTER_ROLE) {
-        require(isEquipment[_equipmentTypeId] == true, "Not a valid Equipment type");
+    function safeMint(string memory _trackingId, address _to, uint256 _equipmentTypeId, uint numOfTokens) public onlyRole(MINTER_ROLE) {
+        require(isEquipment[_equipmentTypeId] == true, "Not a valid equipment type");
 
         for (uint i=0; i< numOfTokens; i++) {
             uint256 tokenId = _tokenIdCounter.current();
             _safeMint(_to, tokenId);
             equipmentType[tokenId] = _equipmentTypeId;
+            emit equipmentMinted(_trackingId, _to, tokenId, _equipmentTypeId);
             _tokenIdCounter.increment();
         }
     }
