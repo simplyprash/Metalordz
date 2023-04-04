@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: MIT
 
 pragma solidity ^0.8.17;
@@ -8,7 +7,6 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Burnable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
-import "@openzeppelin/contracts/utils/Strings.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/token/common/ERC2981.sol";
 import "./IERC4907.sol";
@@ -16,7 +14,6 @@ import "./IERC4907.sol";
 contract MetalordzCosmetics is ERC721, ERC721Burnable, IERC4907, ERC2981, AccessControl, Ownable {
     using Counters for Counters.Counter;
     using SafeMath for uint256;
-    using Strings for uint256;
     string public baseURI;
     Counters.Counter private _tokenIdCounter;
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
@@ -34,8 +31,12 @@ contract MetalordzCosmetics is ERC721, ERC721Burnable, IERC4907, ERC2981, Access
     }
 
     mapping(uint256 => UserInfo) internal _users;
+    event cosmeticTypeAdded(uint256 cosmeticTypeId);
+    event cosmeticMinted(string trackingId, address mintedTo, uint256 tokenId, uint256 cosmeticType);
 
-    constructor() ERC721("MetaLordz Cosmetics", "METALORDZ WARRIORS") {}
+    constructor() ERC721("MetaLordz Cosmetics", "METALORDZ COSMETICS") {
+        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
+    }
 
     function supportsInterface(bytes4 interfaceId) public view virtual override(ERC721, ERC2981, AccessControl) returns (bool) {
         return super.supportsInterface(interfaceId);
@@ -59,45 +60,49 @@ contract MetalordzCosmetics is ERC721, ERC721Burnable, IERC4907, ERC2981, Access
 
     function setCosmeticsTypes(uint256[] memory _cosmeticsTypes) external onlyRole(ADMIN_ROLE) {
         for (uint i=0; i<_cosmeticsTypes.length; i++) {
-            isCosmetics[i] = true;
+            isCosmetics[_cosmeticsTypes[i]] = true;
+            emit cosmeticTypeAdded(_cosmeticsTypes[i]);
         }
     }
 
     // to be set with a '/' in the end
-    function setBaseURI(string calldata _baseURI) external onlyRole(ADMIN_ROLE) {
+    function setBaseURI(string memory _baseURI) external onlyOwner {
         baseURI = _baseURI;
     }
 
-    function mintBulkCosmetics(uint256 _cosmeticsTypeId, uint numOfTokens) external onlyRole(ADMIN_ROLE) {
+    function mintBulkCosmetics(string memory _trackingId, address _to, uint256 _cosmeticsTypeId, uint numOfTokens) external onlyRole(ADMIN_ROLE) {
         require(isCosmetics[_cosmeticsTypeId] == true, "Not a valid cosmetics type");
         for (uint i=0; i< numOfTokens; i++) {
             uint256 tokenId = _tokenIdCounter.current();
-            _safeMint(msg.sender, tokenId);
+            _safeMint(_to, tokenId);
             cosmeticsType[tokenId] = _cosmeticsTypeId;
+            emit cosmeticMinted(_trackingId,  _to, tokenId, _cosmeticsTypeId);
             _tokenIdCounter.increment();
         }
     }
 
-    function mintBulkCosmeticsDistributed(uint256[] memory cosmeticsTypeArray, uint numOfTokens) external onlyRole(ADMIN_ROLE) {
+    function mintBulkCosmeticsDistributed(string memory _trackingId, address _to, uint256[] memory cosmeticsTypeArray, uint numOfTokens) external onlyRole(ADMIN_ROLE) {
         uint len = cosmeticsTypeArray.length;
         for (uint i=0; i< numOfTokens; i++) {
             uint256 tokenId = _tokenIdCounter.current();
-            _safeMint(msg.sender, tokenId);
+            _safeMint(_to, tokenId);
             uint256 _cosmeticsTypeId = cosmeticsTypeArray[i.mod(len)]; //equal distribution of members of cosmetics type Array
             cosmeticsType[tokenId] = _cosmeticsTypeId;
+            emit cosmeticMinted(_trackingId, _to, tokenId, _cosmeticsTypeId);
             _tokenIdCounter.increment();
         }
     }
 
     // MINTER FUNCTIONS // -------------------------------------------- //
     
-    function safeMint(address _to, uint256 _cosmeticsTypeId, uint numOfTokens) public onlyRole(MINTER_ROLE) {
+    function safeMint(string memory _trackingId, address _to, uint256 _cosmeticsTypeId, uint numOfTokens) public onlyRole(MINTER_ROLE) {
         require(isCosmetics[_cosmeticsTypeId] == true, "Not a valid cosmetics type");
 
         for (uint i=0; i< numOfTokens; i++) {
             uint256 tokenId = _tokenIdCounter.current();
             _safeMint(_to, tokenId);
             cosmeticsType[tokenId] = _cosmeticsTypeId;
+            emit cosmeticMinted(_trackingId, _to, tokenId, _cosmeticsTypeId);
             _tokenIdCounter.increment();
         }
     }
