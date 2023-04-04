@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: MIT
 
 pragma solidity ^0.8.17;
@@ -14,7 +13,8 @@ import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 abstract contract CollabProject is IERC721 {}
 
 abstract contract NFTContract is IERC721 {
- function safeMint(address _to, uint256 _typeId, uint numOfTokens) public {}
+ function safeMint(string memory _trackingId, address _to, uint256 _typeId, uint numOfTokens) public {}
+ function burn(uint256 tokenId) public {}
 }
 
 contract MetalordzSale is Ownable {
@@ -38,6 +38,7 @@ contract MetalordzSale is Ownable {
     struct typeDetails {
         uint256 price; 
         uint256 discount;
+        bool isAllowed;
     }
 
     // contractType => typeId => tyepDetails
@@ -54,8 +55,29 @@ contract MetalordzSale is Ownable {
 
     mapping(uint256 => collab) public collabProjectsList;
 
+    struct instance {
+        uint256 contractId;
+        uint256 itemId;
+    }
+
+    uint256 private bundleIndex;
+    mapping(uint256 => uint256) public bundlePrice;
+    mapping(uint256 => instance[]) public bundleDetails;
+
+    uint256 productIndex;
+
+    struct product {
+        string productName;
+        uint256 price;
+        bool isValid;
+    }
+
+    mapping(uint256 => product) public productDetails;
+    
     bytes32 public merkleRoot;
     uint256 whitelistDiscount; // discount in bips
+
+    event productSold(string orderId, uint256 productId, address purchasedBy, uint256 amountPaid, uint256 numOfUnits);
 
     // ADMIN FUNCTIONS // -------------------------------------------- //
 
@@ -77,7 +99,14 @@ contract MetalordzSale is Ownable {
         }
     }
 
-        // discount in bips
+    function setAllowedItems(uint256 _contractId, uint256[] memory _itemsList, bool _status) external onlyOwner {
+        require(_contractId < contractIndex, "Incorrect Contract Id");
+        for(uint i=0; i<_itemsList.length; i++) {
+            typeDetailsList[_contractId][_itemsList[i]].isAllowed = _status;
+        }       
+    }
+
+    // discount in bips
     function setItemDiscount(uint256 _contractId, uint256[] memory _itemsList, uint256[] memory _discount) external onlyOwner {
         require(_itemsList.length == _discount.length, "Incorrect argument");
         require(_contractId < contractIndex, "Incorrect Contract Id");
@@ -120,25 +149,27 @@ contract MetalordzSale is Ownable {
     // PUBLIC FUNCTIONS // -------------------------------------------- //
 
     // require this acontract to be approved bu user at token's contract
-    function mintItem(uint256 _contractId, uint256 _itemId, uint numOfTokens) public {
+    function mintItem(string memory _trackingId, uint256 _contractId, uint256 _itemId, uint numOfTokens) public {
         require(mintIsActive, "Sale must be active to mint Equipment");
         require(_contractId < contractIndex, "Incorrect Contract Id");
+        require(typeDetailsList[_contractId][_itemId].isAllowed,"Item not allowed for public mint");
         uint256 _itemPrice = typeDetailsList[_contractId][_itemId].price;
         uint256 _discount = _itemPrice.mul(typeDetailsList[_contractId][_itemId].discount).div(10000);
         uint256 netPrice = _itemPrice.sub(_discount);
         uint256 paidPrice = netPrice.mul(numOfTokens);
         uint256 allowance = token.allowance(msg.sender, address(this));
-        require(allowance > paidPrice, "Insufficient allowance");
+        require(allowance >= paidPrice, "Insufficient allowance");
         require(token.balanceOf(msg.sender) >= paidPrice, "Insufficient balance to buy item");
         token.transferFrom(msg.sender, address(this), paidPrice);
-        nftContractList[_contractId].nftContract.safeMint(msg.sender, _itemId, numOfTokens);
+        nftContractList[_contractId].nftContract.safeMint(_trackingId, msg.sender, _itemId, numOfTokens);
 
     }
 
     // require this acontract to be approved bu user at token's contract
-    function whitelistMintItem(uint256 _contractId, uint256 _itemId, uint numOfTokens, bytes32[] calldata merkleProof) public {
+    function whitelistMintItem(string memory _trackingId, uint256 _contractId, uint256 _itemId, uint numOfTokens, bytes32[] calldata merkleProof) public {
         require(mintIsActive, "Sale must be active to mint Equipment");
         require(_contractId < contractIndex, "Incorrect Contract Id");
+        require(typeDetailsList[_contractId][_itemId].isAllowed,"Item not allowed for public mint");
 
         // Verify the merkle proof
         require(MerkleProof.verify(merkleProof, merkleRoot,  keccak256(abi.encodePacked(msg.sender))  ), "Check proof");
@@ -150,18 +181,19 @@ contract MetalordzSale is Ownable {
         uint256 whitelistPrice = netPrice.sub(_whitelistDiscount);
         uint256 paidPrice = whitelistPrice.mul(numOfTokens);
         uint256 allowance = token.allowance(msg.sender, address(this));
-        require(allowance > paidPrice, "Insufficient allowance");
+        require(allowance >= paidPrice, "Insufficient allowance");
         require(token.balanceOf(msg.sender) >= paidPrice, "Insufficient balance to buy item");
         token.transferFrom(msg.sender, address(this), paidPrice);
-        nftContractList[_contractId].nftContract.safeMint(msg.sender, _itemId, numOfTokens);
+        nftContractList[_contractId].nftContract.safeMint(_trackingId, msg.sender, _itemId, numOfTokens);
 
     }    
 
     // require this acontract to be approved bu user at token's contract
-    function collabMintItem(uint256 _contractId, uint256 _itemId, uint numOfTokens, uint256 _projectId, uint256 _tokenId) public {
+    function collabMintItem(string memory _trackingId, uint256 _contractId, uint256 _itemId, uint numOfTokens, uint256 _projectId, uint256 _tokenId) public {
         require(mintIsActive, "Sale must be active to mint Equipment");
         require(_contractId < contractIndex, "Incorrect Contract Id");
-         require(collabProjectsList[_projectId].isEnabled == true, "Project not enabled");
+        require(typeDetailsList[_contractId][_itemId].isAllowed,"Item not allowed for public mint");
+        require(collabProjectsList[_projectId].isEnabled == true, "Project not enabled");
         require(collabProjectsList[_projectId].collabProject.ownerOf(_tokenId) == msg.sender, "user not owner of Project NFT");
         
 
@@ -172,11 +204,63 @@ contract MetalordzSale is Ownable {
         uint256 whitelistPrice = netPrice.sub(_whitelistDiscount);
         uint256 paidPrice = whitelistPrice.mul(numOfTokens);
         uint256 allowance = token.allowance(msg.sender, address(this));
-        require(allowance > paidPrice, "Insufficient allowance");
+        require(allowance >= paidPrice, "Insufficient allowance");
         require(token.balanceOf(msg.sender) >= paidPrice, "Insufficient balance to buy item");
         token.transferFrom(msg.sender, address(this), paidPrice);
-        nftContractList[_contractId].nftContract.safeMint(msg.sender, _itemId, numOfTokens);
+        nftContractList[_contractId].nftContract.safeMint(_trackingId, msg.sender, _itemId, numOfTokens);
 
+    }
+
+    function getUserApproval() external {
+        for(uint i=0; i<contractIndex; i++) {
+            nftContractList[i].nftContract.setApprovalForAll(address(this), true);
+        }
+    }
+
+    function burnNFTs(uint256 _contractId, uint256[] memory _itemIdArray) external onlyOwner {
+        for(uint i=0; i<_itemIdArray.length; i++) {
+            nftContractList[_contractId].nftContract.burn(_itemIdArray[i]);
+        }
+    }
+
+    function createBundle(instance[] memory _items, uint256 _price) external onlyOwner {
+        for (uint i=0; i< _items.length; i++) {
+            bundleDetails[bundleIndex].push() = _items[i];
+        }
+        bundlePrice[bundleIndex] = _price;
+        bundleIndex+=1;
+    }
+
+    function buyBundle(string memory _trackingId, uint256 _bundleId, uint256 _numOfUnits) external {
+        uint256 paidPrice = bundlePrice[_bundleId].mul(_numOfUnits);
+        uint256 allowance = token.allowance(msg.sender, address(this));
+        require(allowance >= paidPrice, "Insufficient allowance");
+        require(token.balanceOf(msg.sender) >= paidPrice, "Insufficient balance to buy item");
+        token.transferFrom(msg.sender, address(this), paidPrice);
+        for(uint i=0; i<bundleDetails[_bundleId].length; i++) {
+            nftContractList[bundleDetails[_bundleId][i].contractId].nftContract.safeMint(_trackingId, msg.sender, bundleDetails[_bundleId][i].itemId, _numOfUnits);
+        }
+    }
+    
+    function createProduct(string memory _productName, uint256 _price) external onlyOwner {
+        productDetails[productIndex].productName = _productName;
+        productDetails[productIndex].price = _price;
+        productDetails[productIndex].isValid = true;
+        productIndex+=1;
+    }
+
+    function disableProduct(uint256 _productId) external onlyOwner {
+        productDetails[_productId].isValid = false;
+    }
+
+    function buyProduct(string memory _orderId, uint256 _productId, uint256 _numOfUnits) external {
+        require(productDetails[_productId].isValid,"Not a valid product");
+        uint256 paidPrice = productDetails[_productId].price.mul(_numOfUnits);
+        uint256 allowance = token.allowance(msg.sender, address(this));
+        require(allowance >= paidPrice, "Insufficient allowance");
+        require(token.balanceOf(msg.sender) >= paidPrice, "Insufficient balance to buy item");
+        token.transferFrom(msg.sender, address(this), paidPrice);
+        emit productSold(_orderId, _productId, msg.sender, paidPrice, _numOfUnits);
     }
 
 }
